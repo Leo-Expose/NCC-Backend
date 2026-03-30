@@ -5,7 +5,8 @@
   "main": "api/index.ts",
   "scripts": {
     "dev": "nodemon --exec ts-node api/index.ts",
-    "build": "tsc --noEmit",
+    "build": "echo \"No build step required for Vercel Serverless Functions\"",
+    "typecheck": "tsc --noEmit",
     "start": "ts-node api/index.ts"
   },
   "keywords": [],

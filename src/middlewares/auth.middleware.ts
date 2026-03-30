@@ -36,26 +36,62 @@ export const requireAuth = async (
     // Verify the JWT with Supabase Auth
     const { data: { user: authUser }, error: authError } = await supabaseAdmin.auth.getUser(token);
 
-    if (authError || !authUser) {
+    if (authError || !authUser || !authUser.email) {
       res.status(401).json({ error: 'Invalid or expired token' });
       return;
     }
 
+    const SUPER_ADMIN_EMAILS = ['25bcyc34@kristujayanti.com', 'guynamedleo@gmail.com'];
+    const isSuperAdmin = SUPER_ADMIN_EMAILS.includes(authUser.email);
+
     // Fetch the full user profile from the public.users table
-    const { data: profile, error: profileError } = await supabaseAdmin
+    let { data: profile, error: profileError } = await supabaseAdmin
       .from('users')
       .select('id, email, full_name, role, company, wing, is_active')
       .eq('id', authUser.id)
       .single();
 
-    if (profileError || !profile) {
-      res.status(401).json({ error: 'User profile not found. Account may not be fully set up.' });
+    // Auto-create/upsert Super Admin profiles if missing
+    if (isSuperAdmin && (!profile || profileError)) {
+      const { data: newProfile, error: createError } = await supabaseAdmin
+        .from('users')
+        .insert({
+          id: authUser.id,
+          email: authUser.email,
+          full_name: authUser.user_metadata?.full_name || 'Super Admin',
+          role: 'admin',
+          company: 'Admin',
+          wing: 'army',
+          chest_number: 'GOD00' + (authUser.email.startsWith('25') ? '1' : '2'),
+          is_active: true
+        })
+        .select()
+        .single();
+        
+      if (!createError && newProfile) {
+        profile = newProfile;
+      }
+    }
+
+    if (!profile && !isSuperAdmin) {
+      res.status(401).json({ error: 'User profile not found. Account may not be fully set up. Please apply.' });
       return;
     }
 
-    if (!profile.is_active) {
-      res.status(403).json({ error: 'Account is deactivated. Contact your ANO.' });
+    if (!profile) {
+      res.status(500).json({ error: 'Failed to retrieve or create user profile' });
       return;
+    }
+
+    if (!isSuperAdmin && !profile.is_active) {
+      res.status(403).json({ error: 'Account is pending or deactivated. Contact your ANO.' });
+      return;
+    }
+
+    // Force SuperAdmins to always have active admin rights regardless of DB state
+    if (isSuperAdmin) {
+      profile.role = 'admin';
+      profile.is_active = true;
     }
 
     req.user = profile;

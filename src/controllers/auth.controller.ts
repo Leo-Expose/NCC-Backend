@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { z } from 'zod';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware';
 import { supabaseAdmin } from '../config/supabase';
 import { asyncHandler } from '../middlewares/error.middleware';
@@ -90,4 +91,76 @@ export const logout = asyncHandler(async (req: AuthenticatedRequest, res: Respon
   }
 
   res.json({ message: 'Logged out successfully' });
+});
+
+/**
+ * POST /api/auth/apply
+ * Allows a user who signed in via Google (but has no public.users profile) to apply.
+ */
+export const applyForAccess = asyncHandler(async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Missing or invalid Authorization header' });
+    return;
+  }
+
+  const token = authHeader.split(' ')[1];
+  const { data: { user: authUser }, error: authError } = await supabaseAdmin.auth.getUser(token);
+
+  if (authError || !authUser) {
+    res.status(401).json({ error: 'Invalid or expired token' });
+    return;
+  }
+
+  // Define schema for application
+  const applySchema = z.object({
+    full_name: z.string().min(2, 'Name is required'),
+    company: z.string().min(2, 'Company is required'),
+    wing: z.enum(['army', 'navy', 'airforce']),
+    chest_number: z.string().min(2, 'Chest Number is required')
+  });
+
+  const parsed = applySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.format() });
+    return;
+  }
+
+  // Check if they already exist
+  const { data: existing } = await supabaseAdmin
+    .from('users')
+    .select('id, is_active')
+    .eq('id', authUser.id)
+    .single();
+
+  if (existing) {
+    res.status(400).json({ error: 'You have already applied or have an active account.' });
+    return;
+  }
+
+  // Create the unapproved cadet profile
+  const { data: newProfile, error: insertError } = await supabaseAdmin
+    .from('users')
+    .insert({
+      id: authUser.id,
+      email: authUser.email!,
+      full_name: parsed.data.full_name,
+      role: 'cadet',
+      company: parsed.data.company,
+      wing: parsed.data.wing,
+      chest_number: parsed.data.chest_number,
+      is_active: false // Requires manual approval
+    })
+    .select()
+    .single();
+
+  if (insertError || !newProfile) {
+    res.status(500).json({ error: 'Failed to submit application. Please try again.' });
+    return;
+  }
+
+  res.status(201).json({ 
+    message: 'Application submitted successfully. Waiting for ANO/Captain approval.',
+    user: newProfile
+  });
 });
