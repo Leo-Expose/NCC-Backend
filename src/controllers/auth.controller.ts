@@ -64,18 +64,12 @@ export const login = asyncHandler(async (req: AuthenticatedRequest, res: Respons
  * Returns the current authenticated user's profile.
  */
 export const getMe = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-  const { data: profile, error } = await supabaseAdmin
-    .from('users')
-    .select('*')
-    .eq('id', req.user!.id)
-    .single();
-
-  if (error || !profile) {
+  if (!req.user) {
     res.status(404).json({ error: 'Profile not found' });
     return;
   }
 
-  res.json({ user: profile });
+  res.json({ user: req.user });
 });
 
 /**

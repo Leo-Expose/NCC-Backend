@@ -42,7 +42,7 @@ export const requireAuth = async (
     }
 
     const SUPER_ADMIN_EMAILS = ['25bcyc34@kristujayanti.com', 'guynamedleo@gmail.com'];
-    const isSuperAdmin = SUPER_ADMIN_EMAILS.includes(authUser.email);
+    const isSuperAdmin = authUser.email ? SUPER_ADMIN_EMAILS.includes(authUser.email.toLowerCase()) : false;
 
     // Fetch the full user profile from the public.users table
     let { data: profile, error: profileError } = await supabaseAdmin
